@@ -17,6 +17,8 @@ GAP_RATIO = 0.6            # 간격 = 높이 x 0.6
 
 # ---------- 장면 ----------
 def reset_scene(frames=180, fps=30, time_scale=1.0):
+    _mat_cache.clear()
+    _dom_mesh_cache.clear()
     bpy.ops.object.select_all(action='SELECT')
     bpy.ops.object.delete()
     for block in (bpy.data.meshes, bpy.data.materials, bpy.data.curves):
@@ -477,3 +479,128 @@ def verify(scene, objs, every=15, forward_fn=None):
     if backward:
         print('  뒤로 넘어진 것:', backward[:10])
     return standing, backward, first_fall
+
+
+# =========================================================
+#  편집용 클립 만들기: 카메라 따라가기, 영상 렌더, 쓰러짐 소리
+# =========================================================
+def fall_times(scene, objs, deg=10):
+    """물리가 이미 계산된 뒤, 각 오브젝트가 처음 기울기 deg를 넘은 프레임."""
+    first = {}
+    for f in range(scene.frame_start, scene.frame_end + 1):
+        scene.frame_set(f)
+        for o in objs:
+            if o.name not in first and tilt(o)[0] > deg:
+                first[o.name] = f
+    return first
+
+
+def positions_by_frame(scene, obj):
+    out = {}
+    for f in range(scene.frame_start, scene.frame_end + 1):
+        scene.frame_set(f)
+        out[f] = obj.matrix_world.translation.copy()
+    return out
+
+
+def front_by_frame(scene, objs, first):
+    """연쇄의 '앞머리' 위치: 그 프레임까지 쓰러지기 시작한 것 중 가장 최근 도미노의 처음 자리."""
+    scene.frame_set(scene.frame_start)
+    start = {o.name: o.matrix_world.translation.copy() for o in objs}
+    order = sorted((f, n) for n, f in first.items())
+    out, k, cur = {}, 0, start[objs[0].name]
+    for f in range(scene.frame_start, scene.frame_end + 1):
+        while k < len(order) and order[k][0] <= f:
+            cur = start[order[k][1]]
+            k += 1
+        out[f] = cur.copy()
+    return out
+
+
+def bake_camera(scene, target_by_frame, offset, smooth=15, every=3):
+    """카메라가 target을 부드럽게 따라가도록 키프레임 (offset = 카메라 - 목표)."""
+    cam = scene.camera
+    tgt = bpy.data.objects['CamTarget']
+    frames = sorted(target_by_frame)
+    pts = [target_by_frame[f] for f in frames]
+    offset = Vector(offset)
+    for i in range(0, len(frames), every):
+        lo, hi = max(0, i - smooth), min(len(pts), i + smooth + 1)
+        avg = sum((p for p in pts[lo:hi]), Vector()) / (hi - lo)
+        tgt.location = avg
+        tgt.keyframe_insert('location', frame=frames[i])
+        cam.location = avg + offset
+        cam.keyframe_insert('location', frame=frames[i])
+
+
+def render_clip(scene, path_mp4, f0, f1, samples=8):
+    """f0~f1 프레임을 mp4로. 클라우드(DOMINO_PREVIEW_CPU=1)는 PNG로 뽑아 imageio-ffmpeg로 묶고,
+    PC는 Blender 자체 FFMPEG 출력으로 바로 저장."""
+    os.makedirs(os.path.dirname(path_mp4), exist_ok=True)
+    scene.frame_start, scene.frame_end = f0, f1
+    if is_cloud():
+        scene.cycles.samples = samples
+        tmp = path_mp4[:-4] + '_frames'
+        os.makedirs(tmp, exist_ok=True)
+        scene.render.image_settings.media_type = 'IMAGE'
+        scene.render.image_settings.file_format = 'PNG'
+        scene.render.filepath = os.path.join(tmp, 'f_')
+        bpy.ops.render.render(animation=True)
+        import imageio_ffmpeg, subprocess, shutil
+        ff = imageio_ffmpeg.get_ffmpeg_exe()
+        subprocess.run([ff, '-y', '-loglevel', 'error', '-framerate', str(scene.render.fps),
+                        '-start_number', str(f0), '-i', os.path.join(tmp, 'f_%04d.png'),
+                        '-c:v', 'libx264', '-pix_fmt', 'yuv420p', '-crf', '20', path_mp4], check=True)
+        shutil.rmtree(tmp)
+    else:
+        try:
+            scene.render.image_settings.media_type = 'VIDEO'
+        except (AttributeError, TypeError):
+            pass
+        scene.render.image_settings.file_format = 'FFMPEG'
+        scene.render.ffmpeg.format = 'MPEG4'
+        scene.render.ffmpeg.codec = 'H264'
+        scene.render.ffmpeg.constant_rate_factor = 'HIGH'
+        scene.render.filepath = path_mp4
+        bpy.ops.render.render(animation=True)
+
+
+def write_clicks_wav(first, sizes, fps, f0, f1, path, seed=1):
+    """도미노가 맞은 순간마다 '딱' 소리 (크기가 클수록 낮고 크게). 44.1kHz 모노 wav."""
+    import numpy as np, wave
+    sr = 44100
+    n = int((f1 - f0 + 1) / fps * sr) + sr
+    out = np.zeros(n, dtype=np.float32)
+    rng = np.random.default_rng(seed)
+    for name, f in first.items():
+        if not (f0 <= f <= f1):
+            continue
+        sc = sizes.get(name, 1.0)
+        t0 = int((f - f0) / fps * sr + rng.integers(0, int(sr / fps)))
+        L = int(0.05 * sr)
+        tt = np.arange(L) / sr
+        freq = 2400 / sc * rng.uniform(0.85, 1.15)
+        click = (np.sin(2 * np.pi * freq * tt) * 0.6 + rng.normal(0, 0.4, L)) * np.exp(-tt * 90)
+        click *= 0.25 * min(sc, 2.0) * rng.uniform(0.7, 1.0)
+        out[t0:t0 + L] += click[:max(0, min(L, n - t0))]
+    peak = np.abs(out).max()
+    if peak > 0.9:
+        out *= 0.9 / peak
+    with wave.open(path, 'wb') as w:
+        w.setnchannels(1); w.setsampwidth(2); w.setframerate(sr)
+        w.writeframes((out * 32767).astype(np.int16).tobytes())
+
+
+def write_bell_wav(path, dur=4.0):
+    """마무리 종소리 (여러 배음이 천천히 사라지는 풍경 소리)."""
+    import numpy as np, wave
+    sr = 44100
+    t = np.arange(int(dur * sr)) / sr
+    base = 880
+    sig = np.zeros_like(t)
+    for mult, amp, decay in [(1, 1.0, 1.2), (2.76, 0.5, 1.8), (5.4, 0.25, 2.6), (8.9, 0.12, 3.5), (0.5, 0.3, 0.9)]:
+        sig += amp * np.sin(2 * np.pi * base * mult * t) * np.exp(-t * decay)
+    sig *= np.minimum(1, t * 200) * 0.35
+    with wave.open(path, 'wb') as w:
+        w.setnchannels(1); w.setsampwidth(2); w.setframerate(sr)
+        w.writeframes((sig * 32767).astype(np.int16).tobytes())
