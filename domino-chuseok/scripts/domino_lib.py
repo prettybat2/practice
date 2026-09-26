@@ -533,13 +533,20 @@ def bake_camera(scene, target_by_frame, offset, smooth=15, every=3):
         cam.keyframe_insert('location', frame=frames[i])
 
 
-def render_clip(scene, path_mp4, f0, f1, samples=8):
+def render_clip(scene, path_mp4, f0, f1, samples=6):
     """f0~f1 프레임을 mp4로. 클라우드(DOMINO_PREVIEW_CPU=1)는 PNG로 뽑아 imageio-ffmpeg로 묶고,
     PC는 Blender 자체 FFMPEG 출력으로 바로 저장."""
     os.makedirs(os.path.dirname(path_mp4), exist_ok=True)
     scene.frame_start, scene.frame_end = f0, f1
     if is_cloud():
         scene.cycles.samples = samples
+        scene.cycles.use_adaptive_sampling = True
+        scene.cycles.max_bounces = 4             # 미리보기 속도: 빛 반사 횟수 줄임
+        scene.cycles.diffuse_bounces = 2
+        scene.cycles.glossy_bounces = 2
+        scene.cycles.transmission_bounces = 4
+        scene.cycles.caustics_reflective = False
+        scene.cycles.caustics_refractive = False
         tmp = path_mp4[:-4] + '_frames'
         os.makedirs(tmp, exist_ok=True)
         scene.render.image_settings.media_type = 'IMAGE'
