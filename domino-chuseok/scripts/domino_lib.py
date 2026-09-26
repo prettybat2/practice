@@ -186,6 +186,9 @@ def _domino_mesh(scale, two_tone=False):
     return mesh
 
 
+FACE_EMISSION = 0.0      # 뒷면 그림 발광 세기 (장면별로 조정, 그림을 선명하게)
+
+
 def face_mat():
     """오브젝트마다 다른 색을 쓰는 뒷면 재질 (obj.color 사용) — 그림 공개용."""
     if 'face' in _mat_cache:
@@ -195,6 +198,8 @@ def face_mat():
     b = nt.nodes.get('Principled BSDF')
     info = nt.nodes.new('ShaderNodeObjectInfo')
     nt.links.new(info.outputs['Color'], b.inputs['Base Color'])
+    nt.links.new(info.outputs['Color'], b.inputs['Emission Color'])
+    b.inputs['Emission Strength'].default_value = FACE_EMISSION
     b.inputs['Roughness'].default_value = 0.35
     b.inputs['Coat Weight'].default_value = 0.2
     _mat_cache['face'] = m

@@ -20,13 +20,14 @@ SMALL = 'small' in ARGS
 
 FRAMES = 420
 scene = D.reset_scene(frames=FRAMES, time_scale=2.5)
-D.wood_floor(size=80)
+D.wood_floor(size=100)
+D.FACE_EMISSION = 0.6                        # 쓰러진 뒤 그림 색이 은은하게 빛나 선명하게
 BRASS = D.simple_mat('Brass', (0.85, 0.62, 0.3), rough=0.25, metal=1.0)
 GOLD = (0.98, 0.7, 0.12)
 
 COL, GAP = 0.6, 0.6                        # 옆 줄 틈 0.1 (0.05면 옆 줄에 걸려 연쇄가 멈춤)
-NC = 12 if SMALL else 34                    # 가로 칸
-NR = 14 if SMALL else 42                    # 세로 줄 (그림 비율 1122:1402 ≈ 0.8에 맞춤)
+NC = 12 if SMALL else 50                    # 가로 칸
+NR = 14 if SMALL else 62                    # 세로 줄 (그림 비율 1122:1402 ≈ 0.8에 맞춤)
 W = (NC - 1) * COL
 Y_TOP = (NR - 1) * GAP                      # 맨 뒤 줄(그림 윗부분) y. 카메라는 -y 쪽
 YAW_TO_CAM = math.pi                        # 벽 도미노는 -y(카메라 쪽)으로 쓰러짐
