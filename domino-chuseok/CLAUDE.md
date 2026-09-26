@@ -124,7 +124,13 @@ Blender 물리 엔진으로 "구슬이 굴러가 도미노를 쓰러뜨리고, �
   - 34×42에서는 고양이가 흐릿해서 루이 결정으로 50×62 + 뒷면 발광(`D.FACE_EMISSION = 0.6`) → 고양이 셋·한복·글씨 줄이 알아볼 만함
   - **수천 개는 `D.add_rigid_batch()`로 강체를 한 번에** 붙일 것 (하나씩 붙이면 개수²로 느려져 3,100개에서 24분 넘게 멈춤)
 - [ ] 배경(한옥·보름달·등불 보케), 바닥에 비치는 네모난 조명 반사 정리
-- [ ] 카메라 연출, 슬로모션, 효과음, 편집
+- [~] 카메라 연출·클립·효과음·편집 파이프라인 (`scripts/make_clips.py`, `scripts/edit_video.py`, `edit_package/`)
+  - `make_clips.py -- sceneXX` 장면 하나씩: 물리 → 카메라 → `edit_package/clips/*.mp4` + `audio/*.wav`(쓰러짐 소리)
+  - PC 전체: `scripts\render_all_clips.bat` (Eevee 1080×1920, **아직 PC에서 시험 안 함**)
+  - 편집: `python edit_video.py` (pip install imageio-ffmpeg) → `edit_package/final/domino_chuseok_60s.mp4`. 구간은 TIMELINE 수정
+  - 편집은 Claude가 직접 함 (루이 확인). `edit_package/README_편집지시서.md`는 다른 편집자용 예비
+  - 클라우드 CPU 미리보기는 프레임당 6~11초로 매우 느림 → **로컬 세션(PC GPU)으로 옮겨 렌더하는 것을 권장**
+  - 장면 1 카메라는 나선 바깥에서 구슬과 함께 돌도록 수정됨 (옛 클립은 기둥에 가림)
 
 ## 7. 관련 프로젝트 (참고만)
 
