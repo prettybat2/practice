@@ -59,7 +59,8 @@ for r in range(NR):                 # r=0 맨 뒤(그림 윗줄) → r=NR-1 맨 
         x = -W / 2 + c * COL        # 카메라(-y)에서 봤을 때 왼→오
         front = D.rainbow(0.02 + 0.8 * (c / (NC - 1) * 0.6 + r / (NR - 1) * 0.4))
         wall.append(D.make_domino((x, y, 0), YAW_TO_CAM, 1.0, front, f'W_{r:02d}_{c:02d}',
-                                  face_rgb=tuple(PIX[r, c])))
+                                  face_rgb=tuple(PIX[r, c]), rigid=False))
+D.add_rigid_batch(wall, lambda o: D.DOM_MASS)
 
 # ---------- 금색 급전선 (벽 뒤, 45도로 비스듬히) ----------
 Y_FEED = Y_TOP + 0.5

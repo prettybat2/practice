@@ -206,8 +206,26 @@ def face_mat():
     return m
 
 
+def add_rigid_batch(objs, mass_fn, friction=DOM_FRICTION, bounce=0.05, shape='BOX'):
+    """여러 오브젝트에 강체를 한 번에 붙인다 (하나씩 붙이면 개수²로 느려짐 — 수천 개일 때 필수)."""
+    bpy.ops.object.select_all(action='DESELECT')
+    for o in objs:
+        o.select_set(True)
+    bpy.context.view_layer.objects.active = objs[0]
+    bpy.ops.rigidbody.objects_add(type='ACTIVE')
+    for o in objs:
+        rb = o.rigid_body
+        rb.mass = mass_fn(o)
+        rb.friction = friction
+        rb.restitution = bounce
+        rb.collision_shape = shape
+        rb.use_margin = True
+        rb.collision_margin = 0.001
+    bpy.ops.object.select_all(action='DESELECT')
+
+
 def make_domino(loc, yaw=0.0, scale=1.0, rgb=(0.9, 0.3, 0.3), name='Domino',
-                mass=None, collection=None, face_rgb=None):
+                mass=None, collection=None, face_rgb=None, rigid=True):
     """loc = 바닥 중심 좌표 (z는 바닥 높이), yaw = 쓰러지는 방향 각(라디안, +Y 기준).
     face_rgb를 주면 뒷면만 그 색 (쓰러지면 드러나는 그림 픽셀)."""
     mesh = _domino_mesh(scale, two_tone=face_rgb is not None)
@@ -224,8 +242,9 @@ def make_domino(loc, yaw=0.0, scale=1.0, rgb=(0.9, 0.3, 0.3), name='Domino',
         obj.material_slots[1].link = 'OBJECT'
         obj.material_slots[1].material = face_mat()
         obj.color = (*face_rgb, 1)
-    add_rigid(obj, 'ACTIVE', mass=(mass or DOM_MASS) * scale ** 3,
-              friction=DOM_FRICTION, bounce=0.05, shape='BOX')
+    if rigid:
+        add_rigid(obj, 'ACTIVE', mass=(mass or DOM_MASS) * scale ** 3,
+                  friction=DOM_FRICTION, bounce=0.05, shape='BOX')
     obj['domino'] = True
     return obj
 
