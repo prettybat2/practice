@@ -204,30 +204,99 @@ def path_points(fn, t0, t1, samples=2000):
     return [Vector((*fn(t0 + (t1 - t0) * i / samples), 0)) for i in range(samples + 1)]
 
 
-def dominoes_along(points, scale_fn=lambda u: 1.0, color_fn=rainbow, z=0.0,
-                   prefix='Line', start_offset=0.0):
-    """점 목록을 따라 도미노를 깐다. 간격은 각 도미노 크기에 비례.
-    scale_fn(u), color_fn(u): u = 0~1 진행률."""
-    # 누적 길이
+def plan_along(points, scale_fn=lambda u: 1.0, z=0.0, start_offset=0.0, align_end=False):
+    """점 목록을 따라 도미노 자리 계획만 세운다 → [(위치, yaw, 크기, u)].
+    간격은 각 도미노 크기에 비례. align_end=True면 마지막 도미노가 정확히 끝점에 오도록 민다."""
     seg = [0.0]
     for a, b in zip(points, points[1:]):
         seg.append(seg[-1] + (b - a).length)
     total = seg[-1]
-    out, s, idx, i = [], start_offset, 0, 0
-    while s <= total:
-        while idx < len(seg) - 2 and seg[idx + 1] < s:
-            idx += 1
-        a, b = points[idx], points[idx + 1]
-        f = (s - seg[idx]) / max(seg[idx + 1] - seg[idx], 1e-9)
-        p = a.lerp(b, f)
+
+    def at(s):
+        i = 0
+        lo, hi = 0, len(seg) - 2
+        while lo < hi:                      # 이분 탐색
+            mid = (lo + hi + 1) // 2
+            if seg[mid] <= s:
+                lo = mid
+            else:
+                hi = mid - 1
+        i = lo
+        a, b = points[i], points[i + 1]
+        f = (s - seg[i]) / max(seg[i + 1] - seg[i], 1e-9)
         d = (b - a).normalized()
-        yaw = math.atan2(-d.x, d.y)     # +Y 방향 기준 회전
-        u = s / total
-        sc = scale_fn(u)
-        out.append(make_domino((p.x, p.y, z), yaw, sc, color_fn(u), f'{prefix}_{i:03d}'))
-        s += DOM_H * sc * GAP_RATIO
-        i += 1
+        return a.lerp(b, f), math.atan2(-d.x, d.y)
+
+    ss, s = [], start_offset
+    while s <= total + 1e-6:
+        ss.append(s)
+        s += DOM_H * scale_fn(min(s / total, 1.0)) * GAP_RATIO
+    if align_end and ss:
+        shift = total - ss[-1]
+        ss = [v + shift for v in ss]
+    out = []
+    for s in ss:
+        p, yaw = at(min(s, total))
+        u = min(s / total, 1.0)
+        out.append((Vector((p.x, p.y, z)), yaw, scale_fn(u), u))
     return out
+
+
+def build_plan(plan, color_fn=rainbow, prefix='Dom'):
+    """plan = [(위치, yaw, 크기, u)] → 도미노 생성. 색은 전체 순서 기준 0~1."""
+    n = max(len(plan) - 1, 1)
+    return [make_domino(p, yaw, sc, color_fn(i / n), f'{prefix}_{i:03d}')
+            for i, (p, yaw, sc, u) in enumerate(plan)]
+
+
+def dominoes_along(points, scale_fn=lambda u: 1.0, color_fn=rainbow, z=0.0,
+                   prefix='Line', start_offset=0.0, align_end=False):
+    plan = plan_along(points, scale_fn, z, start_offset, align_end)
+    return [make_domino(p, yaw, sc, color_fn(u), f'{prefix}_{i:03d}')
+            for i, (p, yaw, sc, u) in enumerate(plan)]
+
+
+def polyline(*pieces, step=0.02):
+    """여러 조각(점 목록)을 이어 붙이고 촘촘히 다시 샘플링."""
+    pts = []
+    for piece in pieces:
+        for p in piece:
+            if not pts or (p - pts[-1]).length > 1e-6:
+                pts.append(p)
+    return pts
+
+
+def arc(center, radius, a0, a1, n=200):
+    return [Vector((center[0] + radius * math.cos(a0 + (a1 - a0) * i / n),
+                    center[1] + radius * math.sin(a0 + (a1 - a0) * i / n), 0)) for i in range(n + 1)]
+
+
+def straight(a, b, n=100):
+    a, b = Vector((*a, 0)) if len(a) == 2 else Vector(a), Vector((*b, 0)) if len(b) == 2 else Vector(b)
+    return [a.lerp(b, i / n) for i in range(n + 1)]
+
+
+def box(name, center, size, mat, physics=True, friction=0.8):
+    bpy.ops.mesh.primitive_cube_add(size=1, location=center)
+    o = bpy.context.object
+    o.name = name
+    o.scale = size
+    bpy.ops.object.transform_apply(location=False, rotation=False, scale=True)
+    o.data.materials.append(mat)
+    if physics:
+        add_rigid(o, 'PASSIVE', friction=friction, bounce=0.05)
+    return o
+
+
+def lean(obj, deg=14):
+    """맨 앞 도미노를 앞 아래 모서리를 축으로 살짝 기울여 연쇄 시작 (컷으로 이어지는 장면 시작용)."""
+    bpy.context.view_layer.update()
+    sc = obj.dimensions.z / DOM_H
+    mw = obj.matrix_world.copy()
+    edge = mw @ Vector((0, DOM_T * sc / 2, -DOM_H * sc / 2))
+    axis = (mw.to_3x3() @ Vector((1, 0, 0))).normalized()
+    R = Matrix.Translation(edge) @ Matrix.Rotation(-math.radians(deg), 4, axis) @ Matrix.Translation(-edge)
+    obj.matrix_world = R @ mw
 
 
 # ---------- 바닥 / 조명 / 배경 ----------
