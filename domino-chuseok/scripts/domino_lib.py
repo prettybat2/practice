@@ -523,13 +523,17 @@ def bake_camera(scene, target_by_frame, offset, smooth=15, every=3):
     tgt = bpy.data.objects['CamTarget']
     frames = sorted(target_by_frame)
     pts = [target_by_frame[f] for f in frames]
-    offset = Vector(offset)
+    # offset: 고정 벡터 또는 {프레임: 벡터} (프레임마다 카메라 방향이 바뀌는 연출)
+    offs = [Vector(offset[f]) if isinstance(offset, dict) else Vector(offset) for f in frames]
+
+    def avg(seq, i):
+        lo, hi = max(0, i - smooth), min(len(seq), i + smooth + 1)
+        return sum((p for p in seq[lo:hi]), Vector()) / (hi - lo)
     for i in range(0, len(frames), every):
-        lo, hi = max(0, i - smooth), min(len(pts), i + smooth + 1)
-        avg = sum((p for p in pts[lo:hi]), Vector()) / (hi - lo)
-        tgt.location = avg
+        a = avg(pts, i)
+        tgt.location = a
         tgt.keyframe_insert('location', frame=frames[i])
-        cam.location = avg + offset
+        cam.location = a + avg(offs, i)
         cam.keyframe_insert('location', frame=frames[i])
 
 

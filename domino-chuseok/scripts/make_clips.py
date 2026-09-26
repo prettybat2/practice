@@ -52,9 +52,21 @@ def scene01():
     ball = g['ball']
     doms = dominoes(sc)
     first = D.fall_times(sc, doms)
-    track = D.positions_by_frame(sc, ball)
-    # 구슬을 비스듬히 위에서 따라감 (나선 → 깔때기 → 시소)
-    D.bake_camera(sc, track, offset=(3.2, -4.2, 2.4), smooth=12)
+    ball_pos = D.positions_by_frame(sc, ball)
+    front = D.front_by_frame(sc, doms, first)
+    hit = min(first.values())                      # 구슬이 첫 도미노를 친 프레임
+    away = g['away']
+    side_view = Vector((-away.y, away.x, 0)) * 5.5 + Vector((0, 0, 2.2))   # 시소·도미노 줄 옆모습
+    target, offset = {}, {}
+    for f, p in ball_pos.items():
+        target[f] = p if f < hit else front[f]
+        r = Vector((p.x, p.y, 0))
+        if f < hit and r.length < 2.0 and p.z > 3.4:
+            # 나선 위: 구슬 바깥쪽(반지름 방향)에서 함께 돌며 봄 → 기둥에 안 가림
+            offset[f] = r.normalized() * 4.5 + Vector((0, 0, 1.6))
+        else:
+            offset[f] = side_view
+    D.bake_camera(sc, target, offset, smooth=18)
     sc.camera.data.lens = 30
     clip(sc, 'scene01_marble', 1, last_fall(first), first)
 
