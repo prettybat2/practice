@@ -24,9 +24,9 @@ D.wood_floor(size=80)
 BRASS = D.simple_mat('Brass', (0.85, 0.62, 0.3), rough=0.25, metal=1.0)
 GOLD = (0.98, 0.7, 0.12)
 
-COL, GAP = 0.55, 0.6
-NC = 12 if SMALL else 36                    # 가로 칸
-NR = 14 if SMALL else 41                    # 세로 줄 (그림 비율 1122:1402 ≈ 0.8에 맞춤)
+COL, GAP = 0.6, 0.6                        # 옆 줄 틈 0.1 (0.05면 옆 줄에 걸려 연쇄가 멈춤)
+NC = 12 if SMALL else 34                    # 가로 칸
+NR = 14 if SMALL else 42                    # 세로 줄 (그림 비율 1122:1402 ≈ 0.8에 맞춤)
 W = (NC - 1) * COL
 Y_TOP = (NR - 1) * GAP                      # 맨 뒤 줄(그림 윗부분) y. 카메라는 -y 쪽
 YAW_TO_CAM = math.pi                        # 벽 도미노는 -y(카메라 쪽)으로 쓰러짐
@@ -130,3 +130,11 @@ if 'render' in ARGS:
     tag = '_small' if SMALL else ''
     for f in [int(a) for a in ARGS if a.isdigit()] or [1]:
         D.render_still(scene, f, os.path.join(out, f'scene07{tag}_f{f:03d}.png'))
+    if 'top' in ARGS:
+        # 공개 컷: 거의 위에서 내려다봄 (그림이 똑바로 읽히게)
+        cam = scene.camera
+        tgt = bpy.data.objects['CamTarget']
+        tgt.location = (0, Y_TOP * 0.45, 0)
+        cam.location = (0, Y_TOP * 0.45 - 2.0, Y_TOP * 1.55)
+        scene.view_settings.exposure = -1.0
+        D.render_still(scene, FRAMES, os.path.join(out, f'scene07{tag}_top_f{FRAMES:03d}.png'))
