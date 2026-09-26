@@ -159,9 +159,10 @@ def rainbow(t, sat=0.88, val=0.92):
 # ---------- 도미노 ----------
 _dom_mesh_cache = {}
 
-def _domino_mesh(scale):
-    """모서리를 둥글린 도미노 메시 (크기별로 공유해서 가볍게)."""
-    key = round(scale, 3)
+def _domino_mesh(scale, two_tone=False):
+    """모서리를 둥글린 도미노 메시 (크기별로 공유해서 가볍게).
+    two_tone=True면 뒷면(-Y, 앞으로 넘어지면 위를 보는 면)에 재질 슬롯 1을 준다."""
+    key = (round(scale, 3), two_tone)
     if key in _dom_mesh_cache:
         return _dom_mesh_cache[key]
     bpy.ops.mesh.primitive_cube_add(size=1, location=(0, 0, 0))
@@ -174,16 +175,37 @@ def _domino_mesh(scale):
     bpy.ops.object.modifier_apply(modifier=mod.name)
     bpy.ops.object.shade_smooth()
     mesh = tmp.data
-    mesh.name = f'DominoMesh_{key}'
+    mesh.name = f'DominoMesh_{key[0]}_{int(two_tone)}'
+    if two_tone:
+        mesh.materials.append(None)
+        mesh.materials.append(None)
+        for poly in mesh.polygons:
+            poly.material_index = 1 if poly.normal.y < -0.5 else 0
     bpy.data.objects.remove(tmp, do_unlink=True)
     _dom_mesh_cache[key] = mesh
     return mesh
 
 
+def face_mat():
+    """오브젝트마다 다른 색을 쓰는 뒷면 재질 (obj.color 사용) — 그림 공개용."""
+    if 'face' in _mat_cache:
+        return _mat_cache['face']
+    m = bpy.data.materials.new('FaceByObjectColor')
+    nt = m.node_tree
+    b = nt.nodes.get('Principled BSDF')
+    info = nt.nodes.new('ShaderNodeObjectInfo')
+    nt.links.new(info.outputs['Color'], b.inputs['Base Color'])
+    b.inputs['Roughness'].default_value = 0.35
+    b.inputs['Coat Weight'].default_value = 0.2
+    _mat_cache['face'] = m
+    return m
+
+
 def make_domino(loc, yaw=0.0, scale=1.0, rgb=(0.9, 0.3, 0.3), name='Domino',
-                mass=None, collection=None):
-    """loc = 바닥 중심 좌표 (z는 바닥 높이), yaw = 쓰러지는 방향 각(라디안, +Y 기준)."""
-    mesh = _domino_mesh(scale)
+                mass=None, collection=None, face_rgb=None):
+    """loc = 바닥 중심 좌표 (z는 바닥 높이), yaw = 쓰러지는 방향 각(라디안, +Y 기준).
+    face_rgb를 주면 뒷면만 그 색 (쓰러지면 드러나는 그림 픽셀)."""
+    mesh = _domino_mesh(scale, two_tone=face_rgb is not None)
     obj = bpy.data.objects.new(name, mesh)
     (collection or bpy.context.scene.collection).objects.link(obj)
     obj.location = Vector(loc) + Vector((0, 0, DOM_H * scale / 2))
@@ -193,6 +215,10 @@ def make_domino(loc, yaw=0.0, scale=1.0, rgb=(0.9, 0.3, 0.3), name='Domino',
     # 메시를 공유하므로 색은 오브젝트 단위 재질로
     obj.material_slots[0].link = 'OBJECT'
     obj.material_slots[0].material = plastic_mat(rgb)
+    if face_rgb is not None:
+        obj.material_slots[1].link = 'OBJECT'
+        obj.material_slots[1].material = face_mat()
+        obj.color = (*face_rgb, 1)
     add_rigid(obj, 'ACTIVE', mass=(mass or DOM_MASS) * scale ** 3,
               friction=DOM_FRICTION, bounce=0.05, shape='BOX')
     obj['domino'] = True
